@@ -37,8 +37,13 @@ read_num(int fd)
     return bytes[0] + (((uint16_t) bytes[1]) << 8);
 }
 
+static void
+write_num(int fd, uint16_t num) {
+    write(fd, &num, 2);
+}
+
 gd_GIF *
-gd_open_gif(const char *fname)
+gd_open_gif_n_copy(const char *input, const char *output, int copy_gct)
 {
     int fd;
     uint8_t sigver[3];
@@ -49,19 +54,22 @@ gd_open_gif(const char *fname)
     int gct_sz;
     gd_GIF *gif;
 
-    fd = open(fname, O_RDONLY);
+    fd = open(input, O_RDONLY);
     if (fd == -1) return NULL;
 #ifdef _WIN32
     setmode(fd, O_BINARY);
 #endif
+    int out = open(output, O_WRONLY);
     /* Header */
     read(fd, sigver, 3);
+    write(out, sigver, 3);
     if (memcmp(sigver, "GIF", 3) != 0) {
         fprintf(stderr, "invalid signature\n");
         goto fail;
     }
     /* Version */
     read(fd, sigver, 3);
+    write(out, sigver, 3);
     if (memcmp(sigver, "89a", 3) != 0) {
         fprintf(stderr, "invalid version\n");
         goto fail;
@@ -69,6 +77,8 @@ gd_open_gif(const char *fname)
     /* Width x Height */
     width  = read_num(fd);
     height = read_num(fd);
+    write_num(out, width);
+    write_num(out, height);
     /* FDSZ */
     read(fd, &fdsz, 1);
     /* Presence of GCT */
@@ -81,10 +91,16 @@ gd_open_gif(const char *fname)
     /* Ignore Sort Flag. */
     /* GCT Size */
     gct_sz = 1 << ((fdsz & 0x07) + 1);
+    if (!copy_gct) {
+        fdsz = 0;
+    }
+    write(out, &fdsz, 1);
     /* Background Color Index */
     read(fd, &bgidx, 1);
+    write(out, &bgidx, 1);
     /* Aspect Ratio */
     read(fd, &aspect, 1);
+    write(out, &aspect, 1);
     /* Create gd_GIF Structure. */
     gif = calloc(1, sizeof(*gif));
     if (!gif) goto fail;
@@ -95,6 +111,9 @@ gd_open_gif(const char *fname)
     /* Read GCT */
     gif->gct.size = gct_sz;
     read(fd, gif->gct.colors, 3 * gif->gct.size);
+    if (copy_gct) {
+        write(out, gif->gct.colors, 3 * gif->gct.size);
+    }
     gif->palette = &gif->gct;
     gif->bgindex = bgidx;
     gif->frame = calloc(4, width * height);
@@ -110,8 +129,10 @@ gd_open_gif(const char *fname)
         for (i = 0; i < gif->width * gif->height; i++)
             memcpy(&gif->canvas[i*3], bgcolor, 3);
     gif->anim_start = lseek(fd, 0, SEEK_CUR);
+    gif->ofd = out;
     goto ok;
 fail:
+    close(out);
     close(fd);
     return 0;
 ok:
@@ -130,28 +151,48 @@ discard_sub_blocks(gd_GIF *gif)
 }
 
 static void
-read_plain_text_ext(gd_GIF *gif)
+discard_sub_blocks_n_cpy(gd_GIF *gif)
 {
+    uint8_t size;
+
+    do {
+        read(gif->fd, &size, 1);
+        write(gif->ofd, &size, 1);
+        // TODO!
+        lseek(gif->fd, size, SEEK_CUR);
+    } while (size);
+}
+
+static void
+read_plain_text_ext_n_cpy(gd_GIF *gif)
+{
+    uint16_t tx, ty, tw, th;
+    uint8_t cw, ch, fg, bg;
+    off_t sub_block;
+    /* block size = 12 */
+    read(gif->fd, &cw, 1);
+    write(gif->ofd, &cw, 1);
+    tx = read_num(gif->fd);
+    write_num(gif->ofd, tx);
+    ty = read_num(gif->fd);
+    write_num(gif->ofd, ty);
+    tw = read_num(gif->fd);
+    write_num(gif->ofd, tw);
+    th = read_num(gif->fd);
+    write_num(gif->ofd, th);
+    read(gif->fd, &cw, 1);
+    write(gif->fd, &cw, 1);
+    read(gif->fd, &ch, 1);
+    write(gif->fd, &ch, 1);
+    read(gif->fd, &fg, 1);
+    write(gif->fd, &fg, 1);
+    read(gif->fd, &bg, 1);
+    write(gif->fd, &bg, 1);
+    sub_block = lseek(gif->fd, 0, SEEK_CUR);
     if (gif->plain_text) {
-        uint16_t tx, ty, tw, th;
-        uint8_t cw, ch, fg, bg;
-        off_t sub_block;
-        lseek(gif->fd, 1, SEEK_CUR); /* block size = 12 */
-        tx = read_num(gif->fd);
-        ty = read_num(gif->fd);
-        tw = read_num(gif->fd);
-        th = read_num(gif->fd);
-        read(gif->fd, &cw, 1);
-        read(gif->fd, &ch, 1);
-        read(gif->fd, &fg, 1);
-        read(gif->fd, &bg, 1);
-        sub_block = lseek(gif->fd, 0, SEEK_CUR);
         gif->plain_text(gif, tx, ty, tw, th, cw, ch, fg, bg);
         lseek(gif->fd, sub_block, SEEK_SET);
-    } else {
-        /* Discard plain text metadata. */
-        lseek(gif->fd, 13, SEEK_CUR);
-    }
+    } 
     /* Discard plain text sub-blocks. */
     discard_sub_blocks(gif);
 }
