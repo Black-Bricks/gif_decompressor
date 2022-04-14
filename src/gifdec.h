@@ -41,6 +41,7 @@ typedef struct gd_GIF {
     uint16_t fx, fy, fw, fh;
     uint8_t bgindex;
     uint8_t *canvas, *frame;
+    int key_size;
 } gd_GIF;
 
 gd_GIF *gd_open_gif(const char *fname);
@@ -49,6 +50,10 @@ void gd_render_frame(gd_GIF *gif, uint8_t *buffer);
 int gd_is_bgcolor(gd_GIF *gif, uint8_t color[3]);
 void gd_rewind(gd_GIF *gif);
 void gd_close_gif(gd_GIF *gif);
+
+gd_GIF *gd_open_gif_n_cpy(const char *input, const char *output, int copy_gct);
+int gd_get_frame_n_cpy(gd_GIF *gif);
+void gd_close_gif_n_cpy(gd_GIF *gif);
 
 #ifdef __cplusplus
 }

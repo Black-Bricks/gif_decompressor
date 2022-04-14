@@ -1,13 +1,13 @@
 #include "main.h"
 #include "gifdec.h"
-#include "unistd.h"
+#include <fcntl.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 #include "getopt.h"
 #include <sys/stat.h>
-
-#define GIF_HEADER_SIZE 13
-#define FRAME_HEADER_SIZE   9
-
-uint8_t *file_buf = NULL;
 
 enum error {
     ERR_OK = 0,
@@ -18,126 +18,104 @@ enum error {
     ERR_NO_MEM = -5,
 };
 
-static void put_key(FILE *fd, int key_size, uint8_t key, uint8_t *shift, uint8_t *byte) {
+static void put_key(
+    FILE *fd, 
+    int key_size, 
+    uint8_t key, 
+    uint8_t *shift, 
+    uint8_t *byte,
+    uint8_t *sub_size
+) {
     key <<= 8 - key_size;
     *byte |= key >> *shift;
     if (*shift + key_size > 7) {
-        fwrite(byte, 1, 1, fd);
+        write(fd, byte, 1);
         *byte = 0;
+        *byte |= key << (8 - *shift);
         *shift = *shift + key_size - 8;
+        *sub_size = *sub_size + 1;
+    } else {
+        *shift += key_size;
     }
-}
-
-static int skip_to_next_frame(uint8_t *buf, long *ptr) {
-    char sep;
-    int cnt = *ptr;
-    sep = buf[cnt++];
-    while (sep != ',') {
-        if (sep == ';')
-            return -1;
-        sep = buf[cnt++];
-    }
-    return cnt;
 }
 
 static int decompress_gif(char *input, char *output, bool remove_gct) {
     if (input == NULL)
         return ERR_EMPTY_FILENAME;
     if (output == NULL) {
-        strcpy(output, "out_\0");
-        strcat(output, input);
+        output = malloc(strlen(input) + 6);
+        char *last_slash = strrchr(input, '\\');
+        if (last_slash == NULL) {
+            last_slash = strrchr(input, '/');
+        }
+        strncpy(output, input, last_slash - input + 1);
+        strcat(output, "out_\0");
+        strcat(output, last_slash + 1);
+        LOGI("input: %s", input);
+        LOGI("output: %s", output);
     }
 
     int ret = ERR_OK;
-    long file_ptr = 0;
 
-    // Open input file
-    FILE *in_f = fopen(input, "rb");
-    if (in_f == NULL) {
-        ret = ERR_NOT_FOUND;
-        goto gif_ret;
-    }
-
-    // Get input file size
-    struct stat stbuf;
-    if (stat(input, &stbuf) == -1) {
-        LOGE("Can't access to the file");
-        ret = ERR_NO_ACCESS;
-        goto gif_ret;
-    }
-
-    // Read input file
-    file_buf = malloc(stbuf.st_size);
-    if (file_buf == NULL) {
-        ret = ERR_NO_MEM;
-        goto gif_ret;
-    }
-    fread(file_buf, 1, stbuf.st_size, in_f);
-    fclose(in_f);
-
-    // Open input file with GIF
-    gd_GIF *gif = gd_open_gif(input);
+    LOGI("Open file");
+    gd_GIF *gif = gd_open_gif_n_cpy(input, output, remove_gct ? 0 : 1);
     if (gif == NULL) {
-        ret = ERR_NOT_GIF;
-        goto gif_ret;
+        return ERR_NOT_GIF;
     }
-
-    // Copy GIF header from input file
-    FILE *out_f = fopen(output, "wb");
-    fwrite(file_buf, 1, GIF_HEADER_SIZE, out_f);
-    file_ptr = GIF_HEADER_SIZE;
-    
-    // Don't copy global color table if needed
-    if (remove_gct) {
-        if (gif->gct.size != 0) {
-            file_ptr += gif->gct.size * 3;
+    LOGI("Decompress frames");
+    int n = 1;
+    while (gd_get_frame_n_cpy(gif)) {
+        uint8_t key_size = 0;
+        uint8_t p_size = gif->palette->size;
+        while (p_size) {
+            p_size >>= key_size++;
         }
-    }
-
-    uint16_t sub_len;
-    uint8_t byte = 0;
-    uint8_t shift = 0;
-    uint8_t key_size;
-    long sub_len_ptr;
-    long next_frame;
-    while (gd_get_frame(gif)) {
-        // Copy until the next frame
-        next_frame = skip_to_next_frame(file_buf, file_ptr); 
-        if (next_frame == -1)
-            goto gif_ret;
-
-        fwrite(&file_buf[file_ptr], 1, next_frame - file_ptr, out_f);
-        file_ptr = next_frame;
-
-        fwrite(&file_buf[file_ptr], 1, FRAME_HEADER_SIZE + 1, out_f);
-        file_ptr += FRAME_HEADER_SIZE + 1;
-
-        key_size = file_buf[file_ptr - 1];
-        sub_len_ptr = lseek(out_f, 0, SEEK_CUR);
-        lseek(out_f, 1, SEEK_CUR);
-        
+        write(gif->ofd, &key_size, 1);
+        key_size++;
+        LOGI("frame %d, w = %d, h = %d, palette size = %d, key size = %d", 
+            n++, gif->fw, gif->fh, gif->palette->size, key_size);
+        off_t sub_block_size_ptr = lseek(gif->ofd, 0, SEEK_CUR);
+        off_t file_ptr;
+        uint8_t sub_block_size = 0;
+        uint8_t shift = 0;
+        uint8_t byte = 0;
+        lseek(gif->ofd, 1, SEEK_CUR);
         for (int i = 0; i < gif->fw * gif->fh; i++) {
-            put_key(out_f, key_size, gif->frame[i], &shift, &byte);
-            sub_len++;
-            long cursor = lseek(out_f, 0, SEEK_CUR);
-            if (sub_len == 256) {
-                byte = 0;
-                fwrite(&byte, 1, 1, out_f);
-                lseek(out_f, sub_len_ptr, SEEK_SET);
-                byte = 255;
-                fwrite(&byte, 1, 1, out_f);
-
-            }
+            LOGI("%02X", gif->frame[i]);
+            put_key(
+                gif->ofd, 
+                key_size, 
+                gif->frame[i], 
+                &shift, 
+                &byte, 
+                &sub_block_size
+            );
+            if (sub_block_size != 255)
+                continue;
+            LOGI("sub block size = %d", sub_block_size);
+            file_ptr = lseek(gif->ofd, 0, SEEK_CUR);
+            lseek(gif->ofd, sub_block_size_ptr, SEEK_SET);
+            write(gif->ofd, &sub_block_size, 1);
+            lseek(gif->ofd, file_ptr, SEEK_SET);
+            byte = 0;
+            write(gif->ofd, &byte, 1);
+            sub_block_size = 0;
+            sub_block_size_ptr = lseek(gif->ofd, 0, SEEK_CUR);
         }
+        if (sub_block_size_ptr == lseek(gif->ofd, 0, SEEK_CUR)) {
+            continue;
+        }
+        LOGI("sub block size = %d", sub_block_size);
+        file_ptr = lseek(gif->ofd, 0, SEEK_CUR);
+        lseek(gif->ofd, sub_block_size_ptr, SEEK_SET);
+        write(gif->ofd, &sub_block_size, 1);
+        lseek(gif->ofd, file_ptr, SEEK_SET);
+        byte = 0;
+        write(gif->ofd, &byte, 1);
     }
-    byte = ';';
-    fwrite(&byte, 1, 1, out_f);
-
+    LOGI("Close files");
 gif_ret:
-    free(file_buf);
-    fclose(in_f);
-    fclose(out_f);
-    gd_close_gif(gif);
+    gd_close_gif_n_cpy(gif);
     return ret;
 }
 
@@ -148,9 +126,35 @@ static void print_help() {
     printf("-h(--help)\t- get help\n");
 }
 
+static void print_error(int err) {
+    switch (err) {
+        case ERR_OK:
+            printf("Decompression successful.\n");
+            break;
+        case ERR_EMPTY_FILENAME:
+            printf("Input file name is empty.\n");
+            break;
+        case ERR_NOT_FOUND:
+            printf("File not found.\n");
+            break;
+        case ERR_NOT_GIF:
+            printf("Input file is not a gif file.\n");
+            break;
+        case ERR_NO_ACCESS:
+            printf("No permissions to access to the file.\n");
+            break;
+        case ERR_NO_MEM:
+            printf("Not enough memory.\n");
+            break;
+        default:
+            break;
+    }
+}
+
 int main(int argc, char *argv[]) {
     char *input_file = NULL;
     char *output_file = NULL;
+    bool rgct = false;
     enum opt {
         OPT_END = -1,
         OPT_HELP = 'h',
@@ -168,25 +172,33 @@ int main(int argc, char *argv[]) {
         int longindex = -1;
         enum opt opt = getopt_long(argc, argv, "i:o:h", longopts, &longindex);
         switch (opt) {
-        case OPT_END:
-            goto end_optparse;
-        case OPT_HELP:
-            print_help();
-            break;
-        case OPT_REMOVE_GCT:
-            LOGI("Remove global color table");
-            break;
-        case OPT_INPUT:
-            LOGI("Input file %s", optarg);
-            break;
-        case OPT_OUTPUT:
-            LOGI("Output file %s", optarg);
-            break;
-        case OPT_UNEXPECTED:
-            print_help();
-            return 1;
+            case OPT_END:
+                goto end_optparse;
+            case OPT_HELP:
+                print_help();
+                break;
+            case OPT_REMOVE_GCT:
+                LOGI("Remove global color table");
+                rgct = true;
+                break;
+            case OPT_INPUT:
+                LOGI("Input file: %s", optarg);
+                input_file = malloc(strlen(optarg));
+                strcpy(input_file, optarg);
+                break;
+            case OPT_OUTPUT:
+                LOGI("Output file %s", optarg);
+                output_file = malloc(strlen(optarg));
+                strcpy(output_file, optarg);
+                break;
+            case OPT_UNEXPECTED:
+                print_help();
+                return 1;
         }
     }
 end_optparse:
+    LOGI("Decompress");
+    int ret = decompress_gif(input_file, output_file, rgct);
+    print_error(ret);
     return 0;
 }
