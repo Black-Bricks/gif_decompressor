@@ -65,13 +65,13 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
     LOGI("Decompress frames");
     int n = 1;
     while (gd_get_frame_n_cpy(gif)) {
-        uint8_t key_size = 0;
-        uint8_t p_size = gif->palette->size;
+        uint8_t key_size = -1;
+        uint16_t p_size = gif->palette->size;
         while (p_size) {
-            p_size >>= key_size++;
+            key_size++;
+            p_size >>= 1;
         }
         write(gif->ofd, &key_size, 1);
-        key_size++;
         LOGI("frame %d, w = %d, h = %d, palette size = %d, key size = %d", 
             n++, gif->fw, gif->fh, gif->palette->size, key_size);
         off_t sub_block_size_ptr = lseek(gif->ofd, 0, SEEK_CUR);
@@ -81,7 +81,6 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
         uint8_t byte = 0;
         lseek(gif->ofd, 1, SEEK_CUR);
         for (int i = 0; i < gif->fw * gif->fh; i++) {
-            LOGI("%02X", gif->frame[i]);
             put_key(
                 gif->ofd, 
                 key_size, 
@@ -101,6 +100,7 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
             write(gif->ofd, &byte, 1);
             sub_block_size = 0;
             sub_block_size_ptr = lseek(gif->ofd, 0, SEEK_CUR);
+            lseek(gif->ofd, 1, SEEK_CUR);
         }
         if (sub_block_size_ptr == lseek(gif->ofd, 0, SEEK_CUR)) {
             continue;
@@ -113,8 +113,8 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
         byte = 0;
         write(gif->ofd, &byte, 1);
     }
-    LOGI("Close files");
 gif_ret:
+    LOGI("Close files");
     gd_close_gif_n_cpy(gif);
     return ret;
 }
