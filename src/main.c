@@ -9,6 +9,8 @@
 #include "getopt.h"
 #include <sys/stat.h>
 
+#define OUT_FNAME_DEFAULT_PREFIX    "out_\0"
+
 enum error {
     ERR_OK = 0,
     ERR_EMPTY_FILENAME = -1,
@@ -43,13 +45,15 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
     if (input == NULL)
         return ERR_EMPTY_FILENAME;
     if (output == NULL) {
-        output = malloc(strlen(input) + 6);
+        char prefix[] = OUT_FNAME_DEFAULT_PREFIX;
+        output = malloc(strlen(input) + sizeof(prefix) + 1);
+        memset(output, 0, strlen(input) + sizeof(prefix));
         char *last_slash = strrchr(input, '\\');
         if (last_slash == NULL) {
             last_slash = strrchr(input, '/');
         }
         strncpy(output, input, last_slash - input + 1);
-        strcat(output, "out_\0");
+        strcat(output, prefix);
         strcat(output, last_slash + 1);
         LOGI("input: %s", input);
         LOGI("output: %s", output);
@@ -96,8 +100,6 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
             lseek(gif->ofd, sub_block_size_ptr, SEEK_SET);
             write(gif->ofd, &sub_block_size, 1);
             lseek(gif->ofd, file_ptr, SEEK_SET);
-            byte = 0;
-            write(gif->ofd, &byte, 1);
             sub_block_size = 0;
             sub_block_size_ptr = lseek(gif->ofd, 0, SEEK_CUR);
             lseek(gif->ofd, 1, SEEK_CUR);
@@ -183,12 +185,14 @@ int main(int argc, char *argv[]) {
                 break;
             case OPT_INPUT:
                 LOGI("Input file: %s", optarg);
-                input_file = malloc(strlen(optarg));
+                input_file = malloc(strlen(optarg) + 1);
+                memset(input_file, 0, strlen(optarg) + 1);
                 strcpy(input_file, optarg);
                 break;
             case OPT_OUTPUT:
                 LOGI("Output file %s", optarg);
-                output_file = malloc(strlen(optarg));
+                output_file = malloc(strlen(optarg) + 1);
+                memset(output_file, 0, strlen(optarg) + 1);
                 strcpy(output_file, optarg);
                 break;
             case OPT_UNEXPECTED:

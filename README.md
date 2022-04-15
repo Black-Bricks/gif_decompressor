@@ -12,3 +12,5 @@ And then run:
 > make all
 
 To run the program go to the "build" directory and run "launch.exe" file.
+
+This project based on [lecram gifdec](https://github.com/lecram/gifdec) project which source code released into public domain and provided without warranty of any kind.
