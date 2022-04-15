@@ -41,7 +41,12 @@ static void put_key(
     }
 }
 
-static int decompress_gif(char *input, char *output, bool remove_gct) {
+static int decompress_gif(
+    char *input, 
+    char *output, 
+    bool remove_gct, 
+    bool remove_lct
+) {
     if (input == NULL)
         return ERR_EMPTY_FILENAME;
     if (output == NULL) {
@@ -68,7 +73,7 @@ static int decompress_gif(char *input, char *output, bool remove_gct) {
     }
     LOGI("Decompress frames");
     int n = 1;
-    while (gd_get_frame_n_cpy(gif)) {
+    while (gd_get_frame_n_cpy(gif, remove_lct ? 0 : 1)) {
         uint8_t key_size = -1;
         uint16_t p_size = gif->palette->size;
         while (p_size) {
@@ -157,10 +162,12 @@ int main(int argc, char *argv[]) {
     char *input_file = NULL;
     char *output_file = NULL;
     bool rgct = false;
+    bool rlct = false;
     enum opt {
         OPT_END = -1,
         OPT_HELP = 'h',
         OPT_REMOVE_GCT = 'r',
+        OPT_REMOVE_LCT = 'l',
         OPT_INPUT = 'i',
         OPT_OUTPUT = 'o',
         OPT_UNEXPECTED = '?',
@@ -168,6 +175,7 @@ int main(int argc, char *argv[]) {
     static const struct option longopts[] = {
         {.name = "help", .has_arg = no_argument, .val = OPT_HELP},
         {.name = "rgct", .has_arg = no_argument, .val = OPT_REMOVE_GCT},
+        {.name = "rlct", .has_arg = no_argument, .val = OPT_REMOVE_LCT},
         {},
     };
     for (;;) {
@@ -182,6 +190,10 @@ int main(int argc, char *argv[]) {
             case OPT_REMOVE_GCT:
                 LOGI("Remove global color table");
                 rgct = true;
+                break;
+            case OPT_REMOVE_LCT:
+                LOGI("Remove local color table");
+                rlct = true;
                 break;
             case OPT_INPUT:
                 LOGI("Input file: %s", optarg);
@@ -202,7 +214,7 @@ int main(int argc, char *argv[]) {
     }
 end_optparse:
     LOGI("Decompress");
-    int ret = decompress_gif(input_file, output_file, rgct);
+    int ret = decompress_gif(input_file, output_file, rgct, rlct);
     print_error(ret);
     return 0;
 }

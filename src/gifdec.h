@@ -52,7 +52,7 @@ void gd_rewind(gd_GIF *gif);
 void gd_close_gif(gd_GIF *gif);
 
 gd_GIF *gd_open_gif_n_cpy(const char *input, const char *output, int copy_gct);
-int gd_get_frame_n_cpy(gd_GIF *gif);
+gd_get_frame_n_cpy(gd_GIF *gif, int copy_lct);
 void gd_close_gif_n_cpy(gd_GIF *gif);
 
 #ifdef __cplusplus

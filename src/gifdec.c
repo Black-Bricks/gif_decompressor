@@ -769,7 +769,7 @@ read_image(gd_GIF *gif)
 }
 
 static int
-read_image_n_cpy(gd_GIF *gif)
+read_image_n_cpy(gd_GIF *gif, int copy_lct)
 {
     uint8_t fisrz;
     int interlace;
@@ -792,15 +792,23 @@ read_image_n_cpy(gd_GIF *gif)
     gif->fh = MIN(gif->fh, gif->height - gif->fy);
     
     read(gif->fd, &fisrz, 1);
-    write(gif->ofd, &fisrz, 1);
     interlace = fisrz & 0x40;
+
+    if (!copy_lct) {
+        uint8_t without_fisrz = 0;
+        write(gif->ofd, &without_fisrz, 1);
+    } else {
+        write(gif->ofd, &fisrz, 1);
+    }
+    
     /* Ignore Sort Flag. */
     /* Local Color Table? */
     if (fisrz & 0x80) {
         /* Read LCT */
         gif->lct.size = 1 << ((fisrz & 0x07) + 1);
         read(gif->fd, gif->lct.colors, 3 * gif->lct.size);
-        write(gif->ofd, gif->lct.colors, 3 * gif->lct.size);
+        if (copy_lct)
+            write(gif->ofd, gif->lct.colors, 3 * gif->lct.size);
         gif->palette = &gif->lct;
     } else
         gif->palette = &gif->gct;
@@ -870,7 +878,7 @@ gd_get_frame(gd_GIF *gif)
 }
 
 int
-gd_get_frame_n_cpy(gd_GIF *gif)
+gd_get_frame_n_cpy(gd_GIF *gif, int copy_lct)
 {
     char sep;
     dispose(gif);
@@ -887,7 +895,7 @@ gd_get_frame_n_cpy(gd_GIF *gif)
         write(gif->ofd, &sep, 1);
         printf("sep = %02X('%c')\n", sep, sep);
     }
-    if (read_image_n_cpy(gif) == -1)
+    if (read_image_n_cpy(gif, copy_lct) == -1)
         return -1;
     return 1;
 }
