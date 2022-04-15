@@ -130,6 +130,7 @@ static void print_help() {
     printf("-i\t\t- input gif file name\n");
     printf("-o\t\t- output gif file name\n");
     printf("--rgct\t\t- remove global color table\n");
+    printf("--rlct\t\t- remove local color tables\n");
     printf("-h(--help)\t- get help\n");
 }
 
@@ -192,7 +193,7 @@ int main(int argc, char *argv[]) {
                 rgct = true;
                 break;
             case OPT_REMOVE_LCT:
-                LOGI("Remove local color table");
+                LOGI("Remove local color tables");
                 rlct = true;
                 break;
             case OPT_INPUT:
