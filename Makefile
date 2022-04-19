@@ -5,7 +5,7 @@ SOURCES = src/main.c src/gifdec.c
 INCLUDES = $(wildcard src/*.h)
 OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(SOURCES:.c=.o)))
 vpath %.c $(sort $(dir $(SOURCES)))
-EXECUTABLE = launch
+EXECUTABLE = gifdec
 BUILD_DIR = build
 
 all: $(SOURCES) ${INCLUDES} $(BUILD_DIR)/$(EXECUTABLE)

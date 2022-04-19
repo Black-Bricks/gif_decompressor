@@ -11,6 +11,15 @@ To rebuild the project run command:
 And then run:
 > make all
 
-To run the program go to the "build" directory and run "launch.exe" file.
+To run the program go to the "build" directory and run "gifdec.exe" file.
+Options:
+* `-h`: `Help`
+* `-i <fileName>`: `Input file name`
+* `-o <fileName>`: `Output file name`
+* `--rgct`: `Remove global color table`
+* `--rlct`: `Remove local color table`
+
+Example:
+> gifdec.exe -i C:/file_to_decompress.gif -o C:/decompressed_file.gif --rgct
 
 This project based on [lecram gifdec](https://github.com/lecram/gifdec) project which source code released into public domain and provided without warranty of any kind.
