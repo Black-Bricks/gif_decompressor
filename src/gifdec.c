@@ -638,7 +638,7 @@ read_image_data(gd_GIF *gif, int interlace)
             y = p / gif->fw;
             if (interlace)
                 y = interlaced_line_index((int) gif->fh, y);
-            gif->frame[(gif->fy + y) * gif->width + gif->fx + x] = entry.suffix;
+            gif->frame[(gif->fy + y) * gif->fw + gif->fx + x] = entry.suffix;
             if (entry.prefix == 0xFFF)
                 break;
             else
