@@ -638,7 +638,7 @@ read_image_data(gd_GIF *gif, int interlace)
             y = p / gif->fw;
             if (interlace)
                 y = interlaced_line_index((int) gif->fh, y);
-            gif->frame[(gif->fy + y) * gif->fw + gif->fx + x] = entry.suffix;
+            gif->frame[y * gif->fw + x] = entry.suffix;
             if (entry.prefix == 0xFFF)
                 break;
             else
@@ -715,7 +715,7 @@ read_image_data_n_cpy(gd_GIF *gif, int interlace)
             y = p / gif->fw;
             if (interlace)
                 y = interlaced_line_index((int) gif->fh, y);
-            gif->frame[(gif->fy + y) * gif->width + gif->fx + x] = entry.suffix;
+            gif->frame[y * gif->fw + x] = entry.suffix;
             if (entry.prefix == 0xFFF)
                 break;
             else
@@ -821,15 +821,15 @@ render_frame_rect(gd_GIF *gif, uint8_t *buffer)
 {
     int i, j, k;
     uint8_t index, *color;
-    i = gif->fy * gif->width + gif->fx;
+    i = gif->fy * gif->fw + gif->fx;
     for (j = 0; j < gif->fh; j++) {
         for (k = 0; k < gif->fw; k++) {
-            index = gif->frame[(gif->fy + j) * gif->width + gif->fx + k];
+            index = gif->frame[(gif->fy + j) * gif->fw + gif->fx + k];
             color = &gif->palette->colors[index*3];
             if (!gif->gce.transparency || index != gif->gce.tindex)
                 memcpy(&buffer[(i+k)*3], color, 3);
         }
-        i += gif->width;
+        i += gif->fw;
     }
 }
 
